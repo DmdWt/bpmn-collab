@@ -1,9 +1,21 @@
 import json
 import uuid
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import PlainTextResponse
+from fastapi.middleware.cors import CORSMiddleware
 from .bpmn_state import BpmnState
 
 app = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 state = BpmnState()
 
 
@@ -62,22 +74,61 @@ async def websocket_endpoint(ws: WebSocket):
                 await manager.broadcast({"type": "xml_update", "xml": xml, "by": msg.get("by")})
 
             elif t == "acquire_lock":
-                ok = await state.acquire_lock(msg["element_id"], msg["user_id"])
+                # Do not allow locking the canvas element
+                if msg.get("element_id") == 'canvas':
+                    await ws.send_text(json.dumps({
+                        "type": "lock_denied",
+                        "element_id": msg.get("element_id"),
+                        "user_id": msg.get("user_id")
+                    }))
+                else:
+                    ok = await state.acquire_lock(msg["element_id"], msg["user_id"])
+                    # Send response directly to the requesting client
+                    await ws.send_text(json.dumps({
+                        "type": "lock_acquired" if ok else "lock_denied",
+                        "element_id": msg["element_id"],
+                        "user_id": msg["user_id"]
+                    }))
+                # Broadcast lock status to all clients (so overlays are updated)
                 await manager.broadcast({
-                    "type": "lock_acquired" if ok else "lock_denied",
-                    "element_id": msg["element_id"],
-                    "user_id": msg["user_id"]
+                    "type": "locks_update",
+                    "locks": state.locks
                 })
 
             elif t == "release_lock":
-                ok = await state.release_lock(msg["element_id"], msg["user_id"])
-                await manager.broadcast({
-                    "type": "lock_released" if ok else "lock_release_failed",
-                    "element_id": msg["element_id"],
-                    "user_id": msg["user_id"]
-                })
+                # Do not allow releasing a canvas lock (canvas is not lockable)
+                if msg.get("element_id") == 'canvas':
+                    # treat as failed release
+                    await manager.broadcast({
+                        "type": "lock_release_failed",
+                        "element_id": msg.get("element_id"),
+                        "user_id": msg.get("user_id")
+                    })
+                else:
+                    ok = await state.release_lock(msg["element_id"], msg["user_id"])
+                    await manager.broadcast({
+                        "type": "lock_released" if ok else "lock_release_failed",
+                        "element_id": msg["element_id"],
+                        "user_id": msg["user_id"]
+                    })
+                    # Also broadcast the full locks map so all clients have a consistent view
+                    if ok:
+                        await manager.broadcast({
+                            "type": "locks_update",
+                            "locks": state.locks
+                        })
 
     except WebSocketDisconnect:
         manager.disconnect(ws)
         await state.remove_user(user_id)
+        # inform others that the user left
         await manager.broadcast({"type": "user_leave", "user_id": user_id})
+        # and broadcast updated locks in case the disconnected user held locks
+        await manager.broadcast({"type": "locks_update", "locks": state.locks})
+
+
+@app.get("/default-bpmn")
+async def default_bpmn():
+    """Return the server's authoritative default BPMN XML as plain XML text."""
+    default = await state.get_xml()
+    return PlainTextResponse(default, media_type="application/xml")
