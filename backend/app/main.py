@@ -1,9 +1,12 @@
 import json
 import uuid
+import logging
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from .bpmn_state import BpmnState
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -36,8 +39,8 @@ class ConnectionManager:
         for conn in list(self.active_connections):
             try:
                 await conn.send_text(data)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to broadcast message to connection: {e}")
 
 manager = ConnectionManager()
 

@@ -1,179 +1,108 @@
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-
-interface User {
-  id: string
-}
-
-interface WebSocketMessage {
-  type: string
-  xml?: string
-  user_id?: string
-  users?: User[]
-  locks?: Record<string, string>
-  element_id?: string
-  by?: string
-  user?: User
-}
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+import type {
+  User,
+  WebSocketMessage,
+  WebSocketOutgoingMessage
+} from '../types/websocket.types';
+import { createMessageHandlers } from '../services/messageHandlers';
 
 export function useWebSocket() {
-  const ws = ref<WebSocket | null>(null)
-  const userId = ref<string>('')
-  const xml = ref<string>('')
-  const users = ref<User[]>([])
-  const locks = ref<Record<string, string>>({})
-  const lockDenied = ref<string | null>(null)
-  const isConnected = ref(false)
-  const error = ref<string>('')
+  const ws = ref<WebSocket | null>(null);
+  const userId = ref<string>('');
+  const xml = ref<string>('');
+  const users = ref<User[]>([]);
+  const locks = ref<Record<string, string>>({});
+  const lockDenied = ref<string | null>(null);
+  const isConnected = ref(false);
+  const error = ref<string>('');
+
+  // Create message handlers with state references
+  const { handleMessage } = createMessageHandlers({
+    userId,
+    xml,
+    users,
+    locks,
+    lockDenied
+  });
 
   const connect = () => {
     try {
-      ws.value = new WebSocket('ws://localhost:8000/ws')
+      const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws';
+      ws.value = new WebSocket(wsUrl);
 
       ws.value.onopen = () => {
-        isConnected.value = true
-        error.value = ''
-      }
+        isConnected.value = true;
+        error.value = '';
+      };
 
       ws.value.onmessage = (event) => {
-        const msg: WebSocketMessage = JSON.parse(event.data)
-        handleMessage(msg)
-      }
+        const msg: WebSocketMessage = JSON.parse(event.data);
+        handleMessage(msg);
+      };
 
       ws.value.onerror = () => {
-        error.value = 'WebSocket error'
-        isConnected.value = false
-      }
+        error.value = 'WebSocket error';
+        isConnected.value = false;
+      };
 
       ws.value.onclose = () => {
-        isConnected.value = false
-      }
+        isConnected.value = false;
+      };
     } catch (e) {
-      error.value = 'Failed to connect'
-      console.error(e)
+      error.value = 'Failed to connect';
+      console.error(e);
     }
-  }
-
-  const handleMessage = (msg: WebSocketMessage) => {
-    switch (msg.type) {
-      case 'init':
-        userId.value = msg.user_id || ''
-        xml.value = msg.xml || ''
-        users.value = msg.users || []
-        locks.value = msg.locks || {}
-        break
-
-      case 'xml_update':
-        if (msg.by !== userId.value) {
-          xml.value = msg.xml || ''
-        }
-        break
-
-      case 'user_join':
-        if (msg.user?.id) {
-          // Add the new user if they are not already in the list
-          if (!users.value.find(u => u.id === msg.user!.id)) {
-            users.value = [...users.value, msg.user]
-          }
-        }
-        break
-
-      case 'user_leave':
-        users.value = users.value.filter((u) => u.id !== msg.user_id)
-        break
-
-      case 'lock_acquired':
-        if (msg.element_id) {
-          // set single lock entry by replacing the locks object
-          // to ensure reactivity (avoid in-place mutation)
-          locks.value = {
-            ...(locks.value || {}),
-            [msg.element_id]: msg.user_id || ''
-          }
-        }
-        break
-
-      case 'lock_denied':
-        // expose denied element id for UI feedback
-        lockDenied.value = msg.element_id || null
-        break
-
-      case 'lock_released':
-        if (msg.element_id) {
-          // remove entry by creating a new object without the element key
-          const { [msg.element_id]: _, ...rest } = locks.value || {}
-          locks.value = rest
-        }
-        break
-
-      case 'lock_release_failed':
-        break
-
-      case 'locks_update':
-        // backend broadcasts the full locks map
-        if (msg.locks && typeof msg.locks === 'object') {
-          locks.value = msg.locks
-        }
-        break
-    }
-  }
-
-  interface WebSocketOutgoingMessage {
-    type: string
-    xml?: string
-    by?: string
-    element_id?: string
-    user_id?: string
-  }
+  };
 
   const sendMessage = (msg: WebSocketOutgoingMessage) => {
     try {
       if (ws.value && isConnected.value) {
-        ws.value.send(JSON.stringify(msg))
+        ws.value.send(JSON.stringify(msg));
       } else {
-        console.warn('WS not connected, dropping message:', msg)
+        console.warn('WS not connected, dropping message:', msg);
       }
     } catch (e) {
-      console.error('Failed to send WS message', e, msg)
+      console.error('Failed to send WS message', e, msg);
     }
-  }
+  };
 
   const updateXml = (newXml: string) => {
     sendMessage({
       type: 'update_xml',
       xml: newXml,
       by: userId.value
-    })
-  }
+    });
+  };
 
   const acquireLock = (elementId: string) => {
     // Do not allow locking the canvas element
-    if (!elementId || elementId === 'canvas') return
+    if (!elementId || elementId === 'canvas') return;
     sendMessage({
       type: 'acquire_lock',
       element_id: elementId,
       user_id: userId.value
-    })
-  }
+    });
+  };
 
   const releaseLock = (elementId: string) => {
     // Ignore attempts to release the canvas lock (canvas is never lockable)
-    if (!elementId || elementId === 'canvas') return
+    if (!elementId || elementId === 'canvas') return;
     sendMessage({
       type: 'release_lock',
       element_id: elementId,
       user_id: userId.value
-    })
-  }
+    });
+  };
 
   onMounted(() => {
-    connect()
-  })
+    connect();
+  });
 
   onUnmounted(() => {
     if (ws.value) {
-      ws.value.close()
+      ws.value.close();
     }
-  })
+  });
 
   return {
     userId: computed(() => userId.value),
@@ -188,5 +117,5 @@ export function useWebSocket() {
     ws,
     // expose last denied lock id for UI components
     lockDenied: computed(() => lockDenied.value)
-  }
+  };
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import BpmnEditor from './components/BpmnEditor.vue'
+import BpmnEditor from './components/BpmnEditor.vue';
 </script>
 
 <template>
@@ -7,12 +7,6 @@ import BpmnEditor from './components/BpmnEditor.vue'
 </template>
 
 <style>
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
 html,
 body,
 #app {

@@ -1,5 +1,8 @@
 from typing import Dict
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 class BpmnState:
     def __init__(self):
@@ -16,7 +19,7 @@ class BpmnState:
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>"""
-        self.users: Dict[str, dict] = {}
+        self.users: Dict[str, Dict] = {}
         self.locks: Dict[str, str] = {}
         self._lock = asyncio.Lock()
 
