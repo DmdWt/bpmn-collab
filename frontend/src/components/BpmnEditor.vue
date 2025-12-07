@@ -205,15 +205,6 @@ onUnmounted(() => {
   flex: 1;
   background: #fff;
 }
-.lock-badge {
-  display: inline-block;
-  padding: 2px 6px;
-  background: rgba(239, 68, 68, 0.95);
-  color: white;
-  font-size: 11px;
-  border-radius: 4px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-}
 
 .lock-denied-toast {
   position: fixed;
@@ -236,4 +227,14 @@ onUnmounted(() => {
 @import "bpmn-js/dist/assets/diagram-js.css";
 @import "bpmn-js/dist/assets/bpmn-js.css";
 @import "bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css";
+
+.lock-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  background: rgba(239, 68, 68, 0.95);
+  color: white;
+  font-size: 11px;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
 </style>

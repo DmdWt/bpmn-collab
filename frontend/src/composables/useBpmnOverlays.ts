@@ -5,7 +5,7 @@
 
 import { watch, nextTick, type Ref } from 'vue';
 import type BpmnModeler from 'bpmn-js/lib/Modeler';
-import type { Overlays, ElementRegistry } from '../types/bpmn.types';
+import type { Overlays, ElementRegistry } from 'bpmn-js/lib/Modeler';
 
 export function useBpmnOverlays(
   modeler: Ref<BpmnModeler | null>,
@@ -53,19 +53,15 @@ export function useBpmnOverlays(
 
     try {
       const element = elementRegistry.get(elemId);
-      let id: string;
-      if (element) {
-        id = overlays.add(element, {
-          position: { top: -10, right: -10 },
-          html: badge
-        });
-      } else {
-        // fallback: try adding by id (older versions might support it)
-        id = overlays.add(elemId, {
-          position: { top: -10, right: -10 },
-          html: badge
-        });
+      if (!element) {
+        console.warn('Element not found in registry:', elemId);
+        return;
       }
+
+      const id = overlays.add(element, 'lock-badge', {
+        position: { top: -10, right: -10 },
+        html: badge
+      });
       overlaysMap.set(elemId, id);
     } catch (err) {
       console.warn('Failed to add lock overlay for', elemId, err);

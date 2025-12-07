@@ -4,10 +4,9 @@
  */
 
 import { ref, type Ref } from 'vue';
-import type BpmnModeler from 'bpmn-js/lib/Modeler';
+import type { default as BpmnModeler, CommandStack } from 'bpmn-js/lib/Modeler';
 import type {
   BpmnElement,
-  CommandStack,
   CommandStackContext
 } from '../types/bpmn.types';
 
@@ -92,6 +91,9 @@ export function useBpmnLocking(
 
   /**
    * Sets up command stack interception to prevent unauthorized modifications
+   *
+   * This intercepts bpmn-js's command stack to validate locks before any modification.
+   * Every edit operation (move, delete, create, etc.) goes through canExecute() first.
    */
   const setupCommandStackInterception = () => {
     if (!modeler.value) {
@@ -101,19 +103,24 @@ export function useBpmnLocking(
 
     try {
       const commandStack = modeler.value.get('commandStack') as CommandStack;
+      // Save reference to original canExecute method
       const originalCanExecute = commandStack.canExecute.bind(commandStack);
 
+      // Override canExecute to add our lock validation
       commandStack.canExecute = function (
         command: string,
         context?: CommandStackContext
       ): boolean {
+        // First check: let bpmn-js validate if command is generally allowed
         const defaultAllowed = originalCanExecute(command, context);
         if (!defaultAllowed) return false;
 
+        // Second check: verify user has locks for all affected elements
         const affectedElementIds = extractAffectedElements(context);
         const permission = canModifyElements(affectedElementIds);
 
         if (!permission.allowed) {
+          // Block the command and show user feedback
           const owner = permission.lockedBy || 'another user';
           onLockDenied(`Element locked by ${owner}`);
           return false;
@@ -140,40 +147,32 @@ export function useBpmnLocking(
       return;
     }
 
-    // Before acquiring a new lock, release any locks we currently hold
-    try {
-      const myLocks = Object.entries(locks.value || {})
-        .filter(([, owner]) => owner === currentUserId)
-        .map(([id]) => id);
-      for (const lid of myLocks) {
-        if (lid !== element.id) {
-          try {
-            releaseLock(lid);
-          } catch (e) {
-            console.error('error releasing previous lock', lid, e);
-          }
-        }
-      }
-    } catch (e) {
-      console.error('error while releasing previous locks', e);
-    }
+    // Before acquiring a new lock, release any lock we hold
+    releaseCurrentLock();
 
     // Request lock from server for the element
     acquireLock(element.id);
   };
 
   /**
-   * Releases the current lock if any
+   * Releases all locks held by the current user
+   * In single-lock model, this should be at most one lock, but we check all to be safe
    */
   const releaseCurrentLock = () => {
-    if (currentLock.value) {
+    const currentUserId = userId.value;
+    const myLocks = Object.entries(locks.value || {})
+      .filter(([, owner]) => owner === currentUserId)
+      .map(([id]) => id);
+
+    for (const lockId of myLocks) {
       try {
-        releaseLock(currentLock.value);
+        releaseLock(lockId);
       } catch (e) {
-        console.error('error calling releaseLock:', e);
+        console.error('error releasing lock', lockId, e);
       }
-      currentLock.value = null;
     }
+
+    currentLock.value = null;
   };
 
   /**

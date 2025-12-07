@@ -5,7 +5,7 @@
 
 import { watch, type Ref } from 'vue';
 import type BpmnModeler from 'bpmn-js/lib/Modeler';
-import type { Canvas } from '../types/bpmn.types';
+import type { Canvas } from 'bpmn-js/lib/Modeler';
 
 export function useBpmnLoader(
   modeler: Ref<BpmnModeler | null>,
